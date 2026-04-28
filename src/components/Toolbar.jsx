@@ -60,7 +60,17 @@ export default function Toolbar({
             className="w-7 h-7 rounded-md bg-[var(--bg2)] border border-[var(--border2)] flex items-center justify-center"
             aria-hidden
           >
-            <span className="text-[11px] font-black text-[var(--accent)] select-none">{'{J}'}</span>
+            <span
+              className="select-none"
+              style={{
+                fontSize: 11,
+                fontWeight: 900,
+                color: 'var(--accent)',
+                lineHeight: 1,
+              }}
+            >
+              {'{J}'}
+            </span>
           </div>
           <span className="hidden sm:inline">JSON Formatter Pro</span>
         </div>
