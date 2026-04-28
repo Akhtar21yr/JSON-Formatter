@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg0: #0d1117;
+  --bg1: #161b22;
+  --bg2: #21262d;
+  --bg3: #30363d;
+  --border: #30363d;
+  --border2: #3d444d;
+  --text: #e6edf3;
+  --muted: #7d8590;
+  --subtle: #3d444d;
+  --accent: #388bfd;
+  --accent-hover: #1f6feb;
+
+  /* Token colors */
+  --token-key:     #79c0ff;
+  --token-string:  #7ee787;
+  --token-number:  #ffa657;
+  --token-boolean: #d2a8ff;
+  --token-null:    #ff7b72;
+  --token-bracket: #8b949e;
+
+  /* Search highlight */
+  --hl-bg: #332400;
+  --hl-text: #e3b341;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  background: var(--bg0);
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg1); }
+::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* Indent guide lines — vertical lines connecting siblings */
+.indent-guide {
+  width: 20px;
+  border-left: 1px solid var(--subtle);
+  margin-left: 10px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* Search highlight */
+.search-hl {
+  background: var(--hl-bg);
+  color: var(--hl-text);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* Node row hover */
+.node-row { border-radius: 3px; transition: background 0.08s; }
+.node-row:hover { background: rgba(255,255,255,0.04); }
+.node-row:hover .type-badge { display: inline-flex; }
+.type-badge { display: none; }
+
+/* Collapse toggle animation */
+.chevron { transition: transform 0.15s ease; }
+.chevron.open { transform: rotate(90deg); }
+
+/* Copy toast */
+@keyframes toastOut {
+  0%   { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+.toast { animation: toastOut 1.6s ease forwards; }
