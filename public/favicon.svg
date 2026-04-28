@@ -1,6 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
-  <!-- Dark theme matched to app CSS variables:
-       --bg2: #21262d, --border2: #3d444d, --accent: #388bfd, --token-string: #7ee787 -->
   <rect x="6" y="6" width="52" height="52" rx="14" fill="#21262d" stroke="#3d444d" stroke-width="2" />
   <path
     d="M26 20c-6 2.5-10 7.2-10 13s4 10.5 10 13"
