@@ -16,19 +16,6 @@ import {
   deepSortKeys,
 } from '../utils/json'
 
-const SAMPLE_JSON = `{
-  "name": "JSON Formatter Pro",
-  "version": "1.0.0",
-  "users": [
-    { "id": 1, "name": "Adeel Solangi", "active": true },
-    { "id": 2, "name": "Afzal Ghaffar", "active": false }
-  ],
-  "meta": {
-    "generatedAt": "2026-04-28T00:00:00.000Z",
-    "notes": "Replace this with your own JSON and click Apply."
-  }
-}`
-
 const INITIAL_INPUT = ''
 const INITIAL_PARSED = INITIAL_INPUT ? safeParse(INITIAL_INPUT).data : null
 

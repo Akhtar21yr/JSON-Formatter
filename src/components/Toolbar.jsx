@@ -144,6 +144,9 @@ export default function Toolbar({
           className="mt-2 p-3 rounded-lg bg-[var(--bg2)] border border-[var(--border2)] flex flex-col gap-3"
         >
           <div className="flex flex-wrap gap-2">
+            <Btn onClick={onFormat} title="Format with indent (Cmd/Ctrl+Enter)">
+              ⇥ Format
+            </Btn>
             <Btn onClick={onMinify} title="Minify to one line (Cmd/Ctrl+M)">
               ⧉ Minify
             </Btn>

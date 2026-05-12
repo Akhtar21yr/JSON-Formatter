@@ -2,7 +2,6 @@
  * Compare two JSON documents (strict JSON).
  */
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import ErrorBar from './ErrorBar'
 import { safeParse, stringifyJson, deepSortKeys } from '../utils/json'
 import { diffJsonValues } from '../utils/diff'
 
@@ -67,6 +66,37 @@ function myersDiff(aLines, bLines) {
   return []
 }
 
+function tokenizeForIntraline(s) {
+  // Keep whitespace tokens so formatting stays stable.
+  return String(s ?? '').split(/(\s+)/).filter((t) => t.length > 0)
+}
+
+function buildHighlightedSegments(aText, bText) {
+  const aToks = tokenizeForIntraline(aText)
+  const bToks = tokenizeForIntraline(bText)
+  const ops = myersDiff(aToks, bToks)
+
+  const aSegs = []
+  const bSegs = []
+
+  for (const op of ops) {
+    if (op.type === 'equal') {
+      aSegs.push({ kind: 'equal', text: op.a ?? '' })
+      bSegs.push({ kind: 'equal', text: op.b ?? '' })
+      continue
+    }
+    if (op.type === 'del') {
+      aSegs.push({ kind: 'del', text: op.a ?? '' })
+      continue
+    }
+    if (op.type === 'ins') {
+      bSegs.push({ kind: 'ins', text: op.b ?? '' })
+    }
+  }
+
+  return { aSegs, bSegs }
+}
+
 function buildSideBySideRows(ops) {
   const rows = []
   let aNo = 0
@@ -78,12 +108,15 @@ function buildSideBySideRows(ops) {
     if (op.type === 'del' && next?.type === 'ins') {
       aNo++
       bNo++
+      const { aSegs, bSegs } = buildHighlightedSegments(op.a ?? '', next.b ?? '')
       rows.push({
         kind: 'changed',
         aNo,
         bNo,
         aText: op.a ?? '',
         bText: next.b ?? '',
+        aSegs,
+        bSegs,
       })
       i++
       continue
@@ -110,62 +143,161 @@ function buildSideBySideRows(ops) {
   return rows
 }
 
+function Segments({ segs, side }) {
+  if (!segs?.length) return null
+  const cls =
+    side === 'left'
+      ? {
+          del: 'bg-red-700/35 text-[var(--text)] rounded-sm',
+          ins: '',
+          equal: '',
+        }
+      : {
+          del: '',
+          ins: 'bg-emerald-700/35 text-[var(--text)] rounded-sm',
+          equal: '',
+        }
+  return (
+    <>
+      {segs.map((seg, i) => (
+        <span key={i} className={cls[seg.kind] || ''}>
+          {seg.text}
+        </span>
+      ))}
+    </>
+  )
+}
+
+function buildPerSideLineModels(sideBySide) {
+  const leftLines = []
+  const rightLines = []
+
+  for (const r of sideBySide) {
+    if (r.aNo != null) {
+      leftLines.push({
+        kind: r.kind,
+        text: r.aText ?? '',
+        segs: r.kind === 'changed' ? r.aSegs : null,
+      })
+    }
+    if (r.bNo != null) {
+      rightLines.push({
+        kind: r.kind,
+        text: r.bText ?? '',
+        segs: r.kind === 'changed' ? r.bSegs : null,
+      })
+    }
+  }
+
+  return { leftLines, rightLines }
+}
+
+function HighlightedEditor({ value, onChange, lineModel, side, placeholder }) {
+  const textLineCount = Math.max(1, String(value ?? '').split('\n').length)
+  const modelLineCount = Math.max(1, lineModel?.length ?? 0)
+  const lineCount = Math.max(textLineCount, modelLineCount)
+  const minHeightPx = lineCount * 20 + 8 // leading-5 ~= 20px
+  const gutterWidthPx = 64 // must match grid-cols-[64px_1fr]
+  const textPadXPx = 12 // Tailwind px-3
+  const textPadYPx = 2 // Tailwind py-0.5 (approx)
+  const bgFor = (kind) => {
+    if (kind === 'added') return 'bg-emerald-900/20'
+    if (kind === 'removed') return 'bg-red-900/20'
+    if (kind === 'changed') return 'bg-amber-900/20'
+    return ''
+  }
+
+  return (
+    <div className="relative min-h-0 flex-1" style={{ minHeight: minHeightPx }}>
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="grid grid-cols-[64px_1fr] items-start font-mono text-[12px] leading-5">
+          <div className="text-[10px] text-[var(--muted)] select-none border-r border-[var(--border)]">
+            {lineModel.map((_, i) => (
+              <div key={i} className="px-3 py-0.5">
+                {i + 1}
+              </div>
+            ))}
+          </div>
+          <div className="text-[var(--text)]">
+            {lineModel.map((ln, i) => (
+              <div
+                key={i}
+                className={['px-3 py-0.5 whitespace-pre-wrap break-words', bgFor(ln.kind)].join(' ')}
+              >
+                {ln.kind === 'changed' ? <Segments segs={ln.segs} side={side} /> : ln.text}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <textarea
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        spellCheck={false}
+        className={[
+          'relative z-10 w-full h-full resize-none bg-transparent p-0 font-mono text-[12px] leading-5 outline-none border-none',
+          'text-transparent caret-[var(--text)]',
+          '[&::placeholder]:text-[var(--muted)] [&::placeholder]:opacity-70',
+        ].join(' ')}
+        style={{
+          paddingLeft: gutterWidthPx + textPadXPx,
+          paddingRight: textPadXPx,
+          paddingTop: textPadYPx,
+          paddingBottom: textPadYPx,
+          minHeight: minHeightPx,
+        }}
+      />
+    </div>
+  )
+}
+
 export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortKeysOnFormat = false }) {
   const [left, setLeft] = useState(mainInput || '')
   const [right, setRight] = useState('')
-  const [showInputs, setShowInputs] = useState(true)
   const hasComparedOnceRef = useRef(false)
 
   const parsedLeft = useMemo(() => safeParse(left), [left])
   const parsedRight = useMemo(() => safeParse(right), [right])
 
-  const rows = useMemo(() => {
-    if (parsedLeft.error || parsedRight.error || !parsedLeft.data || !parsedRight.data) return []
+  const leftIsJson = !parsedLeft.error
+  const rightIsJson = !parsedRight.error
+  const bothJson = leftIsJson && rightIsJson
+
+  const jsonDiffRows = useMemo(() => {
+    if (!bothJson) return []
     return diffJsonValues(parsedLeft.data, parsedRight.data)
-  }, [parsedLeft, parsedRight])
+  }, [bothJson, parsedLeft.data, parsedRight.data])
 
-  const prettyLeft = useMemo(() => {
-    if (parsedLeft.error || parsedLeft.data == null) return ''
+  const leftForDiff = useMemo(() => {
+    if (!leftIsJson) return String(left ?? '')
     return stringifyJson(parsedLeft.data, { indent, sortKeys: false })
-  }, [parsedLeft, indent])
+  }, [leftIsJson, parsedLeft.data, indent, left])
 
-  const prettyRight = useMemo(() => {
-    if (parsedRight.error || parsedRight.data == null) return ''
+  const rightForDiff = useMemo(() => {
+    if (!rightIsJson) return String(right ?? '')
     return stringifyJson(parsedRight.data, { indent, sortKeys: false })
-  }, [parsedRight, indent])
+  }, [rightIsJson, parsedRight.data, indent, right])
 
   const sideBySide = useMemo(() => {
-    if (!prettyLeft || !prettyRight) return []
-    const aLines = prettyLeft.split('\n')
-    const bLines = prettyRight.split('\n')
+    const aLines = String(leftForDiff ?? '').split('\n')
+    const bLines = String(rightForDiff ?? '').split('\n')
     const ops = myersDiff(aLines, bLines)
     return buildSideBySideRows(ops)
-  }, [prettyLeft, prettyRight])
+  }, [leftForDiff, rightForDiff])
 
   // Once we have a valid comparison, allow a clean 2-pane-only view.
   useEffect(() => {
     if (hasComparedOnceRef.current) return
-    if (prettyLeft && prettyRight && !parsedLeft.error && !parsedRight.error) {
+    const leftEmpty = !String(leftForDiff || '').trim()
+    const rightEmpty = !String(rightForDiff || '').trim()
+    if (!leftEmpty && !rightEmpty) {
       hasComparedOnceRef.current = true
     }
-  }, [prettyLeft, prettyRight, parsedLeft.error, parsedRight.error])
+  }, [leftForDiff, rightForDiff])
 
-  // If user hides inputs but docs aren't comparable (especially initial blank right),
-  // auto-open inputs until we successfully compare at least once.
-  useEffect(() => {
-    if (hasComparedOnceRef.current) return
-    if (showInputs) return
-    const leftEmpty = !String(left || '').trim()
-    const rightEmpty = !String(right || '').trim()
-    if (leftEmpty || rightEmpty || parsedLeft.error || parsedRight.error) setShowInputs(true)
-  }, [left, right, parsedLeft.error, parsedRight.error, showInputs])
-
-  const equal =
-    !parsedLeft.error &&
-    !parsedRight.error &&
-    parsedLeft.data !== null &&
-    parsedRight.data !== null &&
-    rows.length === 0
+  const equal = bothJson ? jsonDiffRows.length === 0 : String(leftForDiff ?? '') === String(rightForDiff ?? '')
 
   const formatSide = useCallback(
     (side) => {
@@ -220,18 +352,13 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
     })
   }, [])
 
+  const { leftLines, rightLines } = useMemo(() => buildPerSideLineModels(sideBySide), [sideBySide])
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden min-h-0">
       <div className="px-3.5 py-2 bg-[var(--bg1)] border-b border-[var(--border)] flex-shrink-0 flex flex-wrap gap-2 items-center justify-between">
         <span className="text-[10px] text-[var(--muted)] uppercase tracking-widest">Diff</span>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="text-[11px] px-2 py-1 rounded bg-[var(--bg2)] border border-[var(--border2)] hover:bg-[var(--bg3)]"
-            onClick={() => setShowInputs((v) => !v)}
-          >
-            {showInputs ? 'Hide inputs' : 'Edit inputs'}
-          </button>
           <button
             type="button"
             className="text-[11px] px-2 py-1 rounded bg-[var(--bg2)] border border-[var(--border2)] hover:bg-[var(--bg3)]"
@@ -249,69 +376,23 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
         </div>
       </div>
 
-      {showInputs && (
-        <div className="flex-shrink-0 border-b border-[var(--border)] bg-[var(--bg0)]">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 max-h-[45vh] overflow-hidden">
-            <div className="flex flex-col min-h-[160px] border-b lg:border-b-0 lg:border-r border-[var(--border)]">
-              <div className="flex items-center justify-between px-2 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)]">
-                <span>A (left)</span>
-                <div className="flex gap-1">
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => formatSide('left')}>
-                    Format
-                  </button>
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => minifySide('left')}>
-                    Minify
-                  </button>
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => sortSide('left')}>
-                    Sort keys
-                  </button>
-                </div>
-              </div>
-              {parsedLeft.error && <ErrorBar error={parsedLeft.error} />}
-              <textarea
-                value={left}
-                onChange={(e) => setLeft(e.target.value)}
-                spellCheck={false}
-                className="flex-1 min-h-[140px] resize-none bg-[var(--bg0)] text-[var(--text)] p-3 font-mono text-[12px] outline-none border-none"
-              />
-            </div>
-
-            <div className="flex flex-col min-h-[160px]">
-              <div className="flex items-center justify-between px-2 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)]">
-                <span>B (right)</span>
-                <div className="flex gap-1">
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => formatSide('right')}>
-                    Format
-                  </button>
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => minifySide('right')}>
-                    Minify
-                  </button>
-                  <button type="button" className="hover:text-[var(--text)]" onClick={() => sortSide('right')}>
-                    Sort keys
-                  </button>
-                </div>
-              </div>
-              {parsedRight.error && <ErrorBar error={parsedRight.error} />}
-              <textarea
-                value={right}
-                onChange={(e) => setRight(e.target.value)}
-                spellCheck={false}
-                className="flex-1 min-h-[140px] resize-none bg-[var(--bg0)] text-[var(--text)] p-3 font-mono text-[12px] outline-none border-none"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex-1 min-h-0 border-t border-[var(--border)] bg-[var(--bg0)] overflow-hidden">
         <div className="px-3 py-2 text-[11px] text-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between gap-3">
-          {parsedLeft.error || parsedRight.error ? (
-            <span>Fix parse errors to compare.</span>
+          {bothJson ? (
+            equal ? (
+              <span className="text-[var(--token-string)] font-semibold">Documents are structurally equal.</span>
+            ) : (
+              <span>
+                <strong className="text-[var(--text)]">{jsonDiffRows.length}</strong> difference
+                {jsonDiffRows.length !== 1 ? 's' : ''}
+              </span>
+            )
           ) : equal ? (
-            <span className="text-[var(--token-string)] font-semibold">Documents are structurally equal.</span>
+            <span className="text-[var(--token-string)] font-semibold">Texts are identical.</span>
           ) : (
             <span>
-              <strong className="text-[var(--text)]">{rows.length}</strong> difference{rows.length !== 1 ? 's' : ''}
+              Comparing as plain text (JSON parse failed on{' '}
+              {!leftIsJson && !rightIsJson ? 'both sides' : !leftIsJson ? 'left side' : 'right side'}).
             </span>
           )}
           <span className="text-[10px]">
@@ -327,77 +408,63 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
           </span>
         </div>
 
-        {!parsedLeft.error && !parsedRight.error && parsedLeft.data && parsedRight.data && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
-            <div
-              ref={leftPaneRef}
-              onScroll={() => syncScroll('left')}
-              className="overflow-auto border-b lg:border-b-0 lg:border-r border-[var(--border)]"
-            >
-              <div className="sticky top-0 z-10 px-3 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)] border-b border-[var(--border)]">
-                A (left)
-              </div>
-              <div className="font-mono text-[12px]">
-                {sideBySide.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className={[
-                      'grid grid-cols-[64px_1fr] items-start',
-                      r.kind === 'added'
-                        ? 'bg-emerald-900/20'
-                        : r.kind === 'removed'
-                          ? 'bg-red-900/20'
-                          : r.kind === 'changed'
-                            ? 'bg-amber-900/20'
-                            : '',
-                    ].join(' ')}
-                  >
-                    <div className="px-3 py-0.5 text-[10px] text-[var(--muted)] select-none border-r border-[var(--border)]">
-                      {r.aNo ?? ''}
-                    </div>
-                    <pre className="m-0 px-3 py-0.5 whitespace-pre-wrap break-words text-[var(--text)]">
-                      {r.aText}
-                    </pre>
-                  </div>
-                ))}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+          <div
+            ref={leftPaneRef}
+            onScroll={() => syncScroll('left')}
+            className="overflow-auto border-b lg:border-b-0 lg:border-r border-[var(--border)] flex flex-col min-h-0"
+          >
+            <div className="sticky top-0 z-10 px-2 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between">
+              <span>A (left)</span>
+              <div className="flex gap-2">
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => formatSide('left')}>
+                  Format
+                </button>
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => minifySide('left')}>
+                  Minify
+                </button>
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => sortSide('left')}>
+                  Sort keys
+                </button>
               </div>
             </div>
-
-            <div
-              ref={rightPaneRef}
-              onScroll={() => syncScroll('right')}
-              className="overflow-auto"
-            >
-              <div className="sticky top-0 z-10 px-3 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)] border-b border-[var(--border)]">
-                B (right)
-              </div>
-              <div className="font-mono text-[12px]">
-                {sideBySide.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className={[
-                      'grid grid-cols-[64px_1fr] items-start',
-                      r.kind === 'added'
-                        ? 'bg-emerald-900/20'
-                        : r.kind === 'removed'
-                          ? 'bg-red-900/20'
-                          : r.kind === 'changed'
-                            ? 'bg-amber-900/20'
-                            : '',
-                    ].join(' ')}
-                  >
-                    <div className="px-3 py-0.5 text-[10px] text-[var(--muted)] select-none border-r border-[var(--border)]">
-                      {r.bNo ?? ''}
-                    </div>
-                    <pre className="m-0 px-3 py-0.5 whitespace-pre-wrap break-words text-[var(--text)]">
-                      {r.bText}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <HighlightedEditor
+              value={left}
+              onChange={(e) => setLeft(e.target.value)}
+              lineModel={leftLines}
+              side="left"
+              placeholder="Type or paste here…"
+            />
           </div>
-        )}
+
+          <div
+            ref={rightPaneRef}
+            onScroll={() => syncScroll('right')}
+            className="overflow-auto flex flex-col min-h-0"
+          >
+            <div className="sticky top-0 z-10 px-2 py-1 bg-[var(--bg2)] text-[10px] text-[var(--muted)] border-b border-[var(--border)] flex items-center justify-between">
+              <span>B (right)</span>
+              <div className="flex gap-2">
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => formatSide('right')}>
+                  Format
+                </button>
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => minifySide('right')}>
+                  Minify
+                </button>
+                <button type="button" className="hover:text-[var(--text)]" onClick={() => sortSide('right')}>
+                  Sort keys
+                </button>
+              </div>
+            </div>
+            <HighlightedEditor
+              value={right}
+              onChange={(e) => setRight(e.target.value)}
+              lineModel={rightLines}
+              side="right"
+              placeholder="Type or paste here…"
+            />
+          </div>
+        </div>
       </div>
     </div>
   )
