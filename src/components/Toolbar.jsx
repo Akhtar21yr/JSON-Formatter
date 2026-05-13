@@ -4,6 +4,7 @@
  * Top action bar: branding, view tabs, format/minify/sort, settings, file actions.
  */
 import { useRef, useState } from 'react'
+import { NavLink } from 'react-router-dom'
 
 function Btn({ onClick, className = '', title, children, ...rest }) {
   return (
@@ -27,8 +28,6 @@ function Btn({ onClick, className = '', title, children, ...rest }) {
 }
 
 export default function Toolbar({
-  view,
-  onViewChange,
   onFormat,
   onMinify,
   onSortKeys,
@@ -55,7 +54,7 @@ export default function Toolbar({
   return (
     <header className="px-4 py-2 bg-[var(--bg1)] border-b border-[var(--border)] flex-shrink-0">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 font-bold text-sm tracking-wide">
+        <div className="flex items-center gap-2 font-bold text-sm tracking-wide min-w-0">
           <div
             className="w-7 h-7 rounded-md bg-[var(--bg2)] border border-[var(--border2)] flex items-center justify-center"
             aria-hidden
@@ -77,20 +76,18 @@ export default function Toolbar({
 
         <nav className="flex gap-0.5 bg-[var(--bg2)] rounded-lg p-1 flex-wrap justify-center" aria-label="View (Alt+1..5)">
           {TABS.map((tab) => (
-            <button
+            <NavLink
               key={tab.id}
-              type="button"
-              onClick={() => onViewChange(tab.id)}
-              className={`
-                px-3 py-1 rounded-md text-xs capitalize transition-all
-                ${view === tab.id
-                  ? 'bg-[var(--bg3)] text-[var(--text)]'
-                  : 'text-[var(--muted)] hover:text-[var(--text)]'
-                }
-              `}
+              to={`/${tab.id}`}
+              className={({ isActive }) =>
+                [
+                  'px-3 py-1 rounded-md text-xs capitalize transition-all no-underline',
+                  isActive ? 'bg-[var(--bg3)] text-[var(--text)]' : 'text-[var(--muted)] hover:text-[var(--text)]',
+                ].join(' ')
+              }
             >
               {tab.label}
-            </button>
+            </NavLink>
           ))}
         </nav>
 
