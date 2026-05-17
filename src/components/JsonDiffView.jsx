@@ -22,6 +22,19 @@ function scrollContainerToEl(container, el) {
   container.scrollTo({ top: Math.max(0, target) })
 }
 
+/** Keep both diff panes at the same relative scroll depth when content height differs (e.g. 1 line vs 6). */
+function syncScrollProportional(src, dst) {
+  const srcMax = Math.max(0, src.scrollHeight - src.clientHeight)
+  const dstMax = Math.max(0, dst.scrollHeight - dst.clientHeight)
+  if (dstMax <= 0) return
+  if (srcMax <= 0) {
+    dst.scrollTo({ top: 0 })
+    return
+  }
+  const ratio = src.scrollTop / srcMax
+  dst.scrollTo({ top: ratio * dstMax })
+}
+
 function myersDiff(aLines, bLines) {
   // Myers O((N+M)D) diff on lines.
   const N = aLines.length
@@ -158,6 +171,29 @@ function buildSideBySideRows(ops) {
     }
   }
   return rows
+}
+
+/** True if intraline diff touches at least one non-whitespace character (skip whitespace-only / “extra line” noise). */
+function hasMeaningfulTokenChange(row) {
+  const aSegs = row.aSegs || []
+  const bSegs = row.bSegs || []
+  for (const s of aSegs) {
+    if (s.kind === 'del' && /\S/.test(String(s.text ?? ''))) return true
+  }
+  for (const s of bSegs) {
+    if (s.kind === 'ins' && /\S/.test(String(s.text ?? ''))) return true
+  }
+  return false
+}
+
+/**
+ * Prev/Next/Jump targets: same-line intraline edits with real content changes.
+ * Skips whole-line added/removed, blank-only rows, and whitespace-only token diffs.
+ */
+function isJumpableDiffRow(row) {
+  if (row.kind !== 'changed') return false
+  if (!String(row.aText ?? '').trim() && !String(row.bText ?? '').trim()) return false
+  return hasMeaningfulTokenChange(row)
 }
 
 /** Active jump (Prev/Next): solid yellow fill on the current diff hunk (no ring) */
@@ -416,10 +452,22 @@ function HighlightedEditor({
     String(value ?? '').length > DIFF_HIGHLIGHT_MAX_CHARS_PER_SIDE ||
     lineCount > DIFF_HIGHLIGHT_MAX_LINES_PER_SIDE
 
-  const displayLines =
+  const baseDisplayLines =
     lineModel.length > 0
       ? lineModel
       : Array.from({ length: lineCount }, () => ({ kind: 'equal', text: '', segs: null }))
+  /** Pad so overlay row count always matches textarea lines (avoids mis-align when line counts diverge briefly). */
+  const displayLines =
+    baseDisplayLines.length >= lineCount
+      ? baseDisplayLines
+      : [
+          ...baseDisplayLines,
+          ...Array.from({ length: lineCount - baseDisplayLines.length }, () => ({
+            kind: 'equal',
+            text: '',
+            segs: null,
+          })),
+        ]
   /** Baseline min height before we measure scrollHeight */
   const minHeightPx = Math.max(120, lineCount * DIFF_LINE_HEIGHT_PX + 16)
   const bgFor = (kind) => {
@@ -718,16 +766,19 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
     const b = rightPaneRef.current
     if (!a || !b) return
     syncingRef.current = true
-    if (from === 'left') b.scrollTo({ top: a.scrollTop })
-    else a.scrollTo({ top: b.scrollTop })
+    const src = from === 'left' ? a : b
+    const dst = from === 'left' ? b : a
+    syncScrollProportional(src, dst)
     window.requestAnimationFrame(() => {
-      syncingRef.current = false
+      window.requestAnimationFrame(() => {
+        syncingRef.current = false
+      })
     })
   }, [])
 
   const changeAnchors = useMemo(() => {
     if (skipLineDiffHighlight) return []
-    return sideBySide.filter((r) => r.kind !== 'equal').map((r) => ({
+    return sideBySide.filter((r) => isJumpableDiffRow(r)).map((r) => ({
       aNo: typeof r.aNo === 'number' ? r.aNo : null,
       bNo: typeof r.bNo === 'number' ? r.bNo : null,
     }))
@@ -737,7 +788,7 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
     if (!compactDiff) return 0
     return flatFoldItems.reduce((acc, item) => {
       if (item.type !== 'row') return acc
-      return item.row.kind === 'equal' ? acc : acc + 1
+      return isJumpableDiffRow(item.row) ? acc + 1 : acc
     }, 0)
   }, [flatFoldItems, compactDiff])
 
@@ -984,11 +1035,11 @@ export default function JsonDiffView({ mainInput, onApplyMain, indent = 2, sortK
                         />
                       )
                     }
-                    const isChange = item.row.kind !== 'equal'
-                    const cIdx = isChange ? changeCounter++ : null
+                    const isJumpable = isJumpableDiffRow(item.row)
+                    const cIdx = isJumpable ? changeCounter++ : null
                     return (
                       <div key={`row-${idx}`} data-change-idx={cIdx ?? undefined}>
-                        <DiffRowPair row={item.row} isActiveJump={Boolean(isChange && cIdx === changeIdx)} />
+                        <DiffRowPair row={item.row} isActiveJump={Boolean(isJumpable && cIdx === changeIdx)} />
                       </div>
                     )
                   })
